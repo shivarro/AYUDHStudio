@@ -90,7 +90,25 @@ async function showDetails(container, { name, description, audio, notes }) {
     }
   };
   container.append(el('div', {}, fileInput, uploadBtn));
+  
+  // add a Delete button with typed confirmation
+  const delBtn = el('button', { style: 'margin-top:1em;color:red' }, 'Delete Project');
+  delBtn.onclick = () => {
+    const answer = prompt(`Type "yes" to permanently delete project "${name}"`);
+    if (answer === 'yes') {
+      fetch(`/api/projects/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      .then(r => {
+        if (!r.ok) throw new Error('Delete failed');
+        // clear UI and reload list
+        container.innerHTML = '';
+        loadProjects();
+      })
+      .catch(err => alert(`Error: ${err.message}`));
+    }
+  };
+  container.append(delBtn);
 
+  
   // Notes section (unchanged)
   const notesDiv = el('div', { className: 'notes' },
     el('h4', {}, 'Notes')

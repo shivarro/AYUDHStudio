@@ -14,6 +14,9 @@ if (!fs.existsSync(DATA_DIR)) {
 
 app.use(express.json());
 app.use(express.static('public'));
+// serve everything in project-data at /project-data
+app.use('/project-data', express.static(DATA_DIR));
+
 
 // Multer storage config—files go into project-data/<project>/audio/
 const storage = multer.diskStorage({
