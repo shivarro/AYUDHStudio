@@ -4,7 +4,7 @@ const path = require('path');
 const multer = require('multer');
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 3000;
 // Change DATA_DIR to point at your rclone mount
 const LOCAL_ROOT = process.env.LOCAL_ROOT || '/mnt/seedr/studio';
 
