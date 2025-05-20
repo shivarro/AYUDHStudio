@@ -1,3 +1,8 @@
+// app.js
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let buffers = [];        // [{ name, buffer }]
+let currentProject = ''; // name of project we’re viewing
+
 const api = {
   list: () => fetch('/api/projects').then(r => r.json()),
   create: (name, desc) =>
@@ -23,9 +28,9 @@ const api = {
     })
 };
 
-function el(tag, attrs={}, ...children) {
+function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
-  for (let k in attrs) e[k] = attrs[k];
+  Object.assign(e, attrs);
   children.forEach(c => e.append(c));
   return e;
 }
@@ -59,25 +64,26 @@ function loadProjects() {
   });
 }
 
-function showDetails(container, { name, description, audio, notes }) {
+async function showDetails(container, { name, description, audio, notes }) {
   container.innerHTML = '';
+  currentProject = name;
+  buffers = [];
+
+  // Description
   if (description) {
     container.append(el('p', {}, description));
   }
-  // Audio list
-  audio.forEach(fn => {
-    const src = `/project-data/${encodeURIComponent(name)}/audio/${encodeURIComponent(fn)}`;
-    container.append(
-      el('div', {},
-        el('label', {}, fn),
-        el('audio', { controls: true, src })
-      )
-    );
-  });
+
+  // TAPE DECK placeholder
+  const deckPlaceholder = el('div', { className: 'tape-deck' }, 'Loading tracks…');
+  container.append(deckPlaceholder);
+
+  // Once we render the deck, we’ll replace this placeholder
+  await initializeTapeDeck(deckPlaceholder, name, audio);
 
   // Upload form
   const fileInput = el('input', { type: 'file' });
-  const uploadBtn = el('button', {}, 'Upload');
+  const uploadBtn = el('button', {}, 'Upload Track');
   uploadBtn.onclick = () => {
     if (fileInput.files.length) {
       api.upload(name, fileInput.files[0]).then(() => loadProjects());
@@ -85,7 +91,7 @@ function showDetails(container, { name, description, audio, notes }) {
   };
   container.append(el('div', {}, fileInput, uploadBtn));
 
-  // Notes
+  // Notes section (unchanged)
   const notesDiv = el('div', { className: 'notes' },
     el('h4', {}, 'Notes')
   );
@@ -98,7 +104,7 @@ function showDetails(container, { name, description, audio, notes }) {
     if (textarea.value.trim()) {
       api.addNote(name, textarea.value.trim())
         .then(() => {
-          showDetails(container, { name, description, audio, notes: [...notes, { text: textarea.value.trim(), timestamp: new Date().toISOString() }] });
+          notesDiv.append(el('p', {}, `[${new Date().toLocaleString()}] ${textarea.value.trim()}`));
           textarea.value = '';
         });
     }
@@ -107,6 +113,64 @@ function showDetails(container, { name, description, audio, notes }) {
   container.append(notesDiv);
 }
 
+async function loadTrack(projectName, filename) {
+  const resp = await fetch(`/project-data/${encodeURIComponent(projectName)}/audio/${encodeURIComponent(filename)}`);
+  const arrayBuffer = await resp.arrayBuffer();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  return { name: filename, buffer: audioBuffer };
+}
+
+async function initializeTapeDeck(container, projectName, audioList) {
+  // Load & decode all tracks
+  const loadPromises = audioList.map(fn => loadTrack(projectName, fn));
+  buffers = await Promise.all(loadPromises);
+
+  // Clear placeholder
+  container.innerHTML = '';
+
+  // Play All button
+  const playAllBtn = el('button', { onclick: playAll }, '▶ Play All Tracks');
+  container.append(playAllBtn);
+
+  // Per-track controls
+  buffers.forEach((track, i) => {
+    const trackDiv = el('div', { className: 'track', id: `track-${i}` },
+      el('span', {}, track.name),
+      el('label', {}, 'Offset (s):'),
+      el('input', { type: 'number', id: `offset-${i}`, step: '0.01', value: 0 }),
+      el('button', { onclick: () => playTrack(i) }, '▶ Solo'),
+      el('button', { onclick: () => downloadTrack(i) }, '⬇ Download')
+    );
+    container.append(trackDiv);
+  });
+}
+
+function playTrack(i) {
+  const offsetInput = document.getElementById(`offset-${i}`);
+  const offset = parseFloat(offsetInput.value) || 0;
+  const { buffer } = buffers[i];
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(audioCtx.destination);
+  src.start(audioCtx.currentTime + offset);
+}
+
+function playAll() {
+  buffers.forEach((_, i) => playTrack(i));
+}
+
+function downloadTrack(i) {
+  const trackName = buffers[i].name;
+  const url = `/project-data/${encodeURIComponent(currentProject)}/audio/${encodeURIComponent(trackName)}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = trackName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// Project creation form
 document.getElementById('project-form').onsubmit = e => {
   e.preventDefault();
   const name = document.getElementById('proj-name').value.trim();
