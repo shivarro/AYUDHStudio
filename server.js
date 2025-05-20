@@ -4,24 +4,19 @@ const path = require('path');
 const multer = require('multer');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'project-data');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR);
-}
+const PORT = process.env.PORT || 4000;
+// Change DATA_DIR to point at your rclone mount
+const LOCAL_ROOT = process.env.LOCAL_ROOT || '/mnt/seedr/studio';
 
 app.use(express.json());
 app.use(express.static('public'));
-// serve everything in project-data at /project-data
-app.use('/project-data', express.static(DATA_DIR));
+// Serve everything in the rclone mount at /project-data
+app.use('/project-data', express.static(LOCAL_ROOT));
 
-
-// Multer storage config—files go into project-data/<project>/audio/
+// Multer disk storage into the rclone mount
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const projDir = path.join(DATA_DIR, req.params.name, 'audio');
+    const projDir = path.join(LOCAL_ROOT, req.params.name, 'audio');
     fs.mkdirSync(projDir, { recursive: true });
     cb(null, projDir);
   },
@@ -33,19 +28,20 @@ const upload = multer({ storage });
 
 // List all projects (name + description)
 app.get('/api/projects', (req, res) => {
-  fs.readdir(DATA_DIR, (err, items) => {
+  fs.readdir(LOCAL_ROOT, (err, items) => {
     if (err) return res.status(500).json({ error: err.message });
-    const projects = items.filter(name => fs.statSync(path.join(DATA_DIR, name)).isDirectory())
+    const projects = items
+      .filter(name => fs.statSync(path.join(LOCAL_ROOT, name)).isDirectory())
       .map(name => {
-        const metaPath = path.join(DATA_DIR, name, 'notes.json');
-        let desc = '';
+        const metaPath = path.join(LOCAL_ROOT, name, 'notes.json');
+        let description = '';
         if (fs.existsSync(metaPath)) {
           try {
             const meta = JSON.parse(fs.readFileSync(metaPath));
-            desc = meta.description || '';
+            description = meta.description || '';
           } catch {}
         }
-        return { name, description: desc };
+        return { name, description };
       });
     res.json(projects);
   });
@@ -55,28 +51,29 @@ app.get('/api/projects', (req, res) => {
 app.post('/api/projects', (req, res) => {
   const { name, description = '' } = req.body;
   if (!name) return res.status(400).json({ error: 'Project name required' });
-  const projPath = path.join(DATA_DIR, name);
+
+  const projPath = path.join(LOCAL_ROOT, name);
   if (fs.existsSync(projPath)) {
     return res.status(400).json({ error: 'Project already exists' });
   }
+
   fs.mkdirSync(path.join(projPath, 'audio'), { recursive: true });
   const meta = { description, notes: [] };
   fs.writeFileSync(path.join(projPath, 'notes.json'), JSON.stringify(meta, null, 2));
+
   res.status(201).json({ message: 'Project created' });
 });
 
 // Get project details (audio list + notes)
 app.get('/api/projects/:name', (req, res) => {
-  const projDir = path.join(DATA_DIR, req.params.name);
+  const projDir = path.join(LOCAL_ROOT, req.params.name);
   if (!fs.existsSync(projDir)) return res.status(404).json({ error: 'Not found' });
 
   // Audio files
   const audioDir = path.join(projDir, 'audio');
-  const audio = fs.existsSync(audioDir)
-    ? fs.readdirSync(audioDir)
-    : [];
+  const audio = fs.existsSync(audioDir) ? fs.readdirSync(audioDir) : [];
 
-  // Notes
+  // Notes & description
   const metaPath = path.join(projDir, 'notes.json');
   let notes = [], description = '';
   if (fs.existsSync(metaPath)) {
@@ -95,33 +92,33 @@ app.post('/api/projects/:name/upload', upload.single('file'), (req, res) => {
 
 // Add a note
 app.post('/api/projects/:name/notes', (req, res) => {
-    const { text, author } = req.body;
-    if (!text) return res.status(400).json({ error: 'Note text required' });
-    const metaPath = path.join(DATA_DIR, req.params.name, 'notes.json');
-    if (!fs.existsSync(metaPath)) return res.status(404).json({ error: 'Project not found' });
-    const meta = JSON.parse(fs.readFileSync(metaPath));
-    meta.notes.push({
-        text,
-        author: author || 'Anonymous',
-        timestamp: new Date().toISOString()
-    });
-    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
-    res.json({ message: 'Note added' });
-});
+  const { text, author } = req.body;
+  if (!text) return res.status(400).json({ error: 'Note text required' });
 
+  const metaPath = path.join(LOCAL_ROOT, req.params.name, 'notes.json');
+  if (!fs.existsSync(metaPath)) return res.status(404).json({ error: 'Project not found' });
+
+  const meta = JSON.parse(fs.readFileSync(metaPath));
+  meta.notes.push({
+    text,
+    author: author || 'Anonymous',
+    timestamp: new Date().toISOString()
+  });
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+
+  res.json({ message: 'Note added' });
+});
 
 // DELETE a project (and all its audio + notes)
 app.delete('/api/projects/:name', (req, res) => {
-  const projDir = path.join(DATA_DIR, req.params.name);
+  const projDir = path.join(LOCAL_ROOT, req.params.name);
   if (!fs.existsSync(projDir)) {
     return res.status(404).json({ error: 'Project not found' });
   }
+
   fs.rmSync(projDir, { recursive: true, force: true });
   res.json({ message: 'Project deleted' });
 });
-
-
-
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
