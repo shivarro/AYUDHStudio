@@ -1,0 +1,4 @@
+node_modules/
+project-data/*
+!project-data/.gitkeep
+.env

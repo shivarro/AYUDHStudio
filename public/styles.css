@@ -1,0 +1,31 @@
+body {
+  font-family: sans-serif;
+  max-width: 800px;
+  margin: auto;
+  padding: 1em;
+}
+h1, h2 { color: #333; }
+#project-list > .project {
+  border: 1px solid #ddd;
+  padding: 1em;
+  margin-bottom: 1em;
+}
+.project-header {
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+}
+.project-details {
+  margin-top: 0.5em;
+}
+audio {
+  width: 100%;
+  margin-top: 0.5em;
+}
+.notes {
+  margin-top: 1em;
+}
+.notes textarea {
+  width: 100%;
+  height: 60px;
+}
