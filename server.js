@@ -105,6 +105,19 @@ app.post('/api/projects/:name/notes', (req, res) => {
   res.json({ message: 'Note added' });
 });
 
+// DELETE a project (and all its audio + notes)
+app.delete('/api/projects/:name', (req, res) => {
+  const projDir = path.join(DATA_DIR, req.params.name);
+  if (!fs.existsSync(projDir)) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+  fs.rmSync(projDir, { recursive: true, force: true });
+  res.json({ message: 'Project deleted' });
+});
+
+
+
+
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
