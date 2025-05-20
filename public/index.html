@@ -8,6 +8,26 @@
 <body>
   <h1>AYUDH Studio</h1>
 
+  <!-- at very top of <body> -->
+  <div id="profile" style="
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      font-family: monospace;
+      font-size: 0.9em;
+      color: #ccc;">
+    User: <span id="user-name">Guest</span>
+    <button id="edit-user" style="
+      background: #333;
+      color: #ccc;
+      border: 1px solid #555;
+      padding: 0.2em 0.5em;
+      cursor: pointer;">
+      Edit
+    </button>
+  </div>
+
+
   <section id="new-project">
     <h2>Create New Project</h2>
     <form id="project-form">

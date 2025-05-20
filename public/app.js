@@ -11,6 +11,29 @@ let startTimes = [];
 let playbackOffsets = [];
 let progressInterval = null;
 
+// app.js (new additions at the very top)
+let userName = localStorage.getItem('ayudhstudioUser') || 'Guest';
+
+function initUserProfile() {
+  const nameSpan = document.getElementById('user-name');
+  const editBtn  = document.getElementById('edit-user');
+  nameSpan.textContent = userName;
+  
+  editBtn.onclick = () => {
+    const newName = prompt('Enter your name:', userName);
+    if (newName && newName.trim()) {
+      userName = newName.trim();
+      localStorage.setItem('ayudhstudioUser', userName);
+      nameSpan.textContent = userName;
+    }
+  };
+}
+
+// call this once on page load
+window.addEventListener('DOMContentLoaded', initUserProfile);
+
+
+
 // API helpers (unchanged)
 const api = {
   list: () => fetch('/api/projects').then(r => r.json()),
@@ -31,9 +54,9 @@ const api = {
   },
   addNote: (name, text) =>
     fetch(`/api/projects/${encodeURIComponent(name)}/notes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, author: userName })
     })
 };
 
@@ -125,18 +148,25 @@ async function showDetails(container, { name, description, audio, notes }) {
     el('h4', {}, 'Notes')
   );
   notes.forEach(n => {
-    notesDiv.append(el('p', {}, `[${new Date(n.timestamp).toLocaleString()}] ${n.text}`));
+      notesDiv.append(el('p', {}, 
+          `[${new Date(n.timestamp).toLocaleString()}] `,
+          el('strong', {}, n.author || 'Anonymous'),
+          `: ${n.text}`
+      ));
   });
   const textarea = el('textarea');
   const noteBtn = el('button', {}, 'Add Note');
   noteBtn.onclick = () => {
-    if (textarea.value.trim()) {
-      api.addNote(name, textarea.value.trim())
-        .then(() => {
-          notesDiv.append(el('p', {}, `[${new Date().toLocaleString()}] ${textarea.value.trim()}`));
+      const text = textarea.value.trim();
+      if (!text) return;
+      api.addNote(name, text).then(() => {
+          notesDiv.append(el('p', {}, 
+              `[${new Date().toLocaleString()}] `,
+              el('strong', {}, userName),
+              `: ${text}`
+          ));
           textarea.value = '';
-        });
-    }
+      });
   };
   notesDiv.append(textarea, noteBtn);
   container.append(notesDiv);

@@ -95,15 +95,20 @@ app.post('/api/projects/:name/upload', upload.single('file'), (req, res) => {
 
 // Add a note
 app.post('/api/projects/:name/notes', (req, res) => {
-  const { text } = req.body;
-  if (!text) return res.status(400).json({ error: 'Note text required' });
-  const metaPath = path.join(DATA_DIR, req.params.name, 'notes.json');
-  if (!fs.existsSync(metaPath)) return res.status(404).json({ error: 'Project not found' });
-  const meta = JSON.parse(fs.readFileSync(metaPath));
-  meta.notes.push({ text, timestamp: new Date().toISOString() });
-  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
-  res.json({ message: 'Note added' });
+    const { text, author } = req.body;
+    if (!text) return res.status(400).json({ error: 'Note text required' });
+    const metaPath = path.join(DATA_DIR, req.params.name, 'notes.json');
+    if (!fs.existsSync(metaPath)) return res.status(404).json({ error: 'Project not found' });
+    const meta = JSON.parse(fs.readFileSync(metaPath));
+    meta.notes.push({
+        text,
+        author: author || 'Anonymous',
+        timestamp: new Date().toISOString()
+    });
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+    res.json({ message: 'Note added' });
 });
+
 
 // DELETE a project (and all its audio + notes)
 app.delete('/api/projects/:name', (req, res) => {
