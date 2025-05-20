@@ -2,15 +2,16 @@
 
 // Web Audio context
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let buffers = [];        // [{ name, buffer }]
-let currentProject = ''; // name of project we’re viewing
+let buffers = [];         // [{ name, buffer }]
+let currentProject = '';  // name of project we’re viewing
 
-// track currently playing source nodes & their start times
+// track playing sources, their schedule, and offsets
 let sources = [];
 let startTimes = [];
+let playbackOffsets = [];
 let progressInterval = null;
 
-// API helpers
+// API helpers (unchanged)
 const api = {
   list: () => fetch('/api/projects').then(r => r.json()),
   create: (name, desc) =>
@@ -86,7 +87,7 @@ async function showDetails(container, { name, description, audio, notes }) {
     container.append(el('p', {}, description));
   }
 
-  // TAPE DECK placeholder
+  // Tape deck placeholder
   const deckPlaceholder = el('div', { className: 'tape-deck' }, 'Loading tracks…');
   container.append(deckPlaceholder);
 
@@ -156,15 +157,19 @@ async function initializeTapeDeck(container, projectName, audioList) {
   buffers = await Promise.all(loadPromises);
 
   // Reset play state
-  sources    = new Array(buffers.length).fill(null);
+  sources = new Array(buffers.length).fill(null);
   startTimes = new Array(buffers.length).fill(0);
+  playbackOffsets = new Array(buffers.length).fill(0);
 
   // Clear placeholder
   container.innerHTML = '';
 
-  // (optional) global Play All – you can uncomment if desired
-  // const playAllBtn = el('button', { onclick: playAll }, '▶ Play All Tracks');
-  // container.append(playAllBtn);
+  // Global Play All
+  const playAllBtn = el('button',
+    { onclick: playAll },
+    '▶ Play All Tracks'
+  );
+  container.append(playAllBtn);
 
   // Global Stop All
   const stopAllBtn = el('button',
@@ -181,38 +186,54 @@ async function initializeTapeDeck(container, projectName, audioList) {
       el('input', { type: 'number', id: `offset-${i}`, step: '0.01', value: 0 }),
       el('button', { onclick: () => playTrack(i) }, '▶ Solo'),
       el('button', { onclick: () => stopTrack(i), style: 'margin-left:0.5em;color:red' }, '■ Stop'),
-      el('progress', {
-        id:    `progress-${i}`,
-        max:   track.buffer.duration,
-        value: 0,
-        style: 'width:150px; margin-left:0.5em;'
-      }),
+      // progress bar (clickable)
+      (() => {
+        const prog = el('progress', {
+          id: `progress-${i}`,
+          max: track.buffer.duration,
+          value: 0,
+          style: 'width:150px; margin-left:0.5em; cursor: pointer;'
+        });
+        prog.onclick = e => {
+          const rect = prog.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const seekTime = (clickX / rect.width) * track.buffer.duration;
+          playTrack(i, seekTime);
+        };
+        return prog;
+      })(),
+      // time display
+      el('span', { id: `time-${i}`, style: 'margin-left:0.5em; min-width:70px; display:inline-block;' }, '0:00/0:00'),
       el('button', { onclick: () => downloadTrack(i) }, '⬇ Download')
     );
     container.append(trackDiv);
+
+    // initialize total time display
+    document.getElementById(`time-${i}`).textContent =
+      `0:00/${formatTime(track.buffer.duration)}`;
   });
 }
 
-// Play a single track (with offset), ensuring only one instance
-function playTrack(i) {
-  // stop existing if any
+// Play a single track (with seekOffset)
+function playTrack(i, seekOffset = 0) {
+  // stop existing instance
   if (sources[i]) {
     sources[i].stop();
     sources[i] = null;
   }
 
-  const offsetInput = document.getElementById(`offset-${i}`);
-  const offset = parseFloat(offsetInput.value) || 0;
+  const scheduleOffset = parseFloat(document.getElementById(`offset-${i}`).value) || 0;
   const { buffer } = buffers[i];
   const src = audioCtx.createBufferSource();
   src.buffer = buffer;
   src.connect(audioCtx.destination);
 
-  // schedule start
-  const when = audioCtx.currentTime + offset;
-  startTimes[i] = when;
-  sources[i]    = src;
-  src.start(when);
+  // schedule start at now + scheduleOffset, from buffer at seekOffset
+  const when = audioCtx.currentTime + scheduleOffset;
+  playbackOffsets[i] = seekOffset;
+  startTimes[i] = when - seekOffset;
+  sources[i] = src;
+  src.start(when, seekOffset);
 
   // start progress polling
   if (!progressInterval) {
@@ -220,14 +241,17 @@ function playTrack(i) {
   }
 }
 
-// Stop a single track and reset its progress bar
+// Stop a single track and reset its UI
 function stopTrack(i) {
   if (sources[i]) {
     sources[i].stop();
     sources[i] = null;
-    const p = document.getElementById(`progress-${i}`);
-    if (p) p.value = 0;
   }
+  // reset progress & time
+  const p = document.getElementById(`progress-${i}`);
+  if (p) p.value = 0;
+  const t = document.getElementById(`time-${i}`);
+  if (t) t.textContent = `0:00/${formatTime(buffers[i].buffer.duration)}`;
 }
 
 // Stop all tracks & clear polling
@@ -239,16 +263,18 @@ function stopAll() {
   }
 }
 
-// Update each track’s progress bar based on AudioContext time
+// Update each track’s progress bar & time
 function updateAllProgress() {
   sources.forEach((src, i) => {
     if (!src) return;
-    const now     = audioCtx.currentTime;
+    const now = audioCtx.currentTime;
     const elapsed = now - startTimes[i];
-    const dur     = buffers[i].buffer.duration;
-    const p       = document.getElementById(`progress-${i}`);
+    const dur = buffers[i].buffer.duration;
+    const p = document.getElementById(`progress-${i}`);
+    const t = document.getElementById(`time-${i}`);
     if (elapsed >= 0 && elapsed <= dur) {
-      p.value = elapsed;
+      if (p) p.value = elapsed;
+      if (t) t.textContent = `${formatTime(elapsed)}/${formatTime(dur)}`;
     }
     if (elapsed >= dur) {
       stopTrack(i);
@@ -272,6 +298,13 @@ function downloadTrack(i) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+// Format seconds to M:SS
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 // Project creation form handler
